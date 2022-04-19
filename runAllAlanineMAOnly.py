@@ -22,6 +22,17 @@ fullEADict = {'C1-1':-0.8,
               'C3-3':-7.9,
               'C3-4':-9.5}
 storeResults = {}
+#set the ordering of files as "Std/Smp/Std/..." (Alternate) or Std/Std/Std/Smp/Smp/Smp/Std/... (3Std3Smp)
+#orderStr = 'Alternate'
+orderStr = '3Std3Smp'
+
+if orderStr == '3Std3Smp':
+    fileLabels = ['Std 1', 'Std 2', 'Std 3', 'Smp 1', 'Smp 2','Smp 3', 'Std 4' 'Std 5', 'Std 6']
+elif orderStr == 'Alternate':
+    #includes 9 to avoid errors with set_xticklabels call
+    fileLabels = ['Std 1', 'Smp 1', 'Std 2', 'Smp 2', 'Std 3','Smp 3', 'Std 4', '', '']
+else:
+    print("Incorrect orderStr " + orderStr)
 
 allOutput = {}
 for testKey, EAValue in fullEADict.items():
@@ -98,16 +109,14 @@ for testKey, EAValue in fullEADict.items():
 
         #Code expects to see acquisitions in the order of xticklabels
         cAx.set_xticks(range(9))
-        cAx.set_xticklabels(['Std 1','Std 2', 'Std 3', 'Smp 1', 'Smp 2', 'Smp 3',
-                            'Std 4','Std 5', 'Std 6'], rotation = 45)
+        cAx.set_xticklabels(fileLabels, rotation = 45)
         
         cAx = ax[1]
         cAx.scatter(range(len(means)), means)
         cAx.set_title(testKey + 'MA tic means')
 
         cAx.set_xticks(range(9));
-        cAx.set_xticklabels(['Std 1','Std 2', 'Std 3', 'Smp 1', 'Smp 2', 'Smp 3',
-                            'Std 4','Std 5', 'Std 6'], rotation = 45)
+        cAx.set_xticklabels(fileLabels, rotation = 45)
         #Empirically set y limits for easy comparison 
         cAx.set_ylim(1.25e8,2.75e8)
         
@@ -176,19 +185,18 @@ for testKey, replicateData in storeResults.items():
 
 
 #Output as .csv file.
-names = ['Std 1','Std 2','Std 3','Smp 1','Smp 2','Smp 3','Std 4','Std 5','Std 6']
 with open('OutputTableMA.csv', 'w', newline='') as csvfile:
     write = csv.writer(csvfile, delimiter=',')
     for testKey, testData in storeFull.items():
         write.writerow(['Test','13C/Unsub','RSE','15N/Unsub','RSE','D/Unsub','RSE','18O/Unsub','RSE'])
         for i in range(9):
-            constructRow = [testKey + names[i]]
+            constructRow = [testKey + fileLabels[i]]
             for varKey, varData in testData.items():
                 constructRow.append(varData['Avg'][i])
                 constructRow.append(varData['RSE'][i])
                 
             write.writerow(constructRow)
-            
+
 #Standardize and calculate errors across measurements. You might not care about this; the .csv output at the end just gives the average and RSE for each acquisition, not this more processed data product. 
 #storeBySub is the final output dictionary, containing just a single data point and error bar for each substitution. 
 storeBySub = {'13C/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]},
@@ -197,37 +205,66 @@ storeBySub = {'13C/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]},
            '18O/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]}}
 
 for testKey, replicateData in storeResults.items():
-    for subKey in storeBySub.keys():
-        stds = []
-        smps = []
-        fIdx = 0
-        #THIS IS WHERE WE SET THE ORDER FOR STANDARDIZATION. If the file has index 3,4,5, we add to smps list. Otherwise we add to stds list. 
-        for fileKey, fileData in replicateData.items():
-            if fIdx not in [3,4,5]:
-                stds.append(fileData['90'][subKey]['Average'])
-            else:
-                smps.append(fileData['90'][subKey]['Average'])
+    #Propagate RSE for 3Std3Smp file order
+    if orderStr == '3Std3Smp':
+        for subKey in storeBySub.keys():
+            stds = []
+            smps = []
+            fIdx = 0
+            #THIS IS WHERE WE SET THE ORDER FOR STANDARDIZATION. If the file has index 3,4,5, we add to smps list. Otherwise we add to stds list. 
+            for fileKey, fileData in replicateData.items():
+                if fIdx not in [3,4,5]:
+                    stds.append(fileData['90'][subKey]['Average'])
+                else:
+                    smps.append(fileData['90'][subKey]['Average'])
+                    
+                fIdx += 1
+
+            #calculate average sample/standard comparison
+            avg = np.array(smps).mean() / np.array(stds).mean()
+            
+            #Report error bars by first finding standard errors for standard and sample acquisitions. 
+            serrorSmp = np.array(smps).std() / np.sqrt(3)
+            rseSmp = serrorSmp / np.array(smps).mean()
+            
+            serrorStd = np.array(stds).std() / np.sqrt(6)
+            rseStd = serrorStd / np.array(stds).mean()
+            
+            #Then finding the combined RSE by adding in quadrature. 
+            propRSE = np.sqrt(rseStd ** 2 + rseSmp ** 2)
+
+            #Store results
+            storeBySub[subKey]['Avg'].append(1000*(avg-1))
+            storeBySub[subKey]['Propagated_RSE'].append(1000* propRSE)
+            storeBySub[subKey]['Indices'].append(testKey)
+
+    #Propagate RSE for Alternating file order
+    else:
+        for subKey in storeBySub.keys():
+            for fileIdx, replicateAvg in enumerate(storeFull[testKey][subKey]['Avg']):
+                if fileIdx % 2 == 1:
+                    std1Idx = fileIdx - 1 
+                    std2Idx = fileIdx + 1
+
+                    std1Ratio = storeFull[testKey][subKey]['Avg'][std1Idx]
+                    std1Error = storeFull[testKey][subKey]['RSE'][std1Idx]
+
+                    std2Ratio = storeFull[testKey][subKey]['Avg'][std2Idx]
+                    std2Error = storeFull[testKey][subKey]['RSE'][std2Idx]
+
+                    smpRatio = storeFull[testKey][subKey]['Avg'][fileIdx]
+                    smpError = storeFull[testKey][subKey]['RSE'][fileIdx]
+             
+                    avgStd = (std1Ratio + std2Ratio) / 2
+                    avgRat = smpRatio / avgStd
+
+                    avgErr = np.array([std1Error, std2Error]).mean()
+                    comErr = np.sqrt(smpError**2 + avgErr **2)
                 
-            fIdx += 1
-
-        #calculate average sample/standard comparison
-        avg = np.array(smps).mean() / np.array(stds).mean()
-        
-        #Report error bars by first finding standard errors for standard and sample acquisitions. 
-        serrorSmp = np.array(smps).std() / np.sqrt(3)
-        rseSmp = serrorSmp / np.array(smps).mean()
-        
-        serrorStd = np.array(stds).std() / np.sqrt(6)
-        rseStd = serrorStd / np.array(stds).mean()
-        
-        #Then finding the combined RSE by adding in quadrature. 
-        propRSE = np.sqrt(rseStd ** 2 + rseSmp ** 2)
-
-        #Store results
-        storeBySub[subKey]['Avg'].append(1000*(avg-1))
-        storeBySub[subKey]['Propagated_RSE'].append(1000* propRSE)
-        storeBySub[subKey]['Indices'].append(testKey)
-        
+                    storeBySub[subKey]['Avg'].append(1000*(avgRat-1))
+                    storeBySub[subKey]['Propagated_RSE'].append(1000* comErr)
+                    storeBySub[subKey]['Indices'].append(testKey)
+                    
 #GENERATE OUTPUT PLOTS
 EAValues = []
 #We constrained the unlabelled standard as delta^13(C) = -12.5 vs VPDB. I plot the results as sample vs. this standard, not sample vs VPDB, so we shift the values appropriately. 
