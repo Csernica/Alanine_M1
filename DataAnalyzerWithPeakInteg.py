@@ -663,6 +663,7 @@ def calc_Folder_Output(folderPath, cullOn=None, cullAmount=2,\
         "StdDev", "StdError", "RelStdError","TICVar","TIC*ITVar","TIC*ITMean", 'ShotNoise']
     #get all the file names in the folder with the same end 
     fileNames = [x for x in os.listdir(folderPath) if x.endswith(fileExt)]
+    fileNames.sort()
     peakNumber = 0
 
     #Process through each raw file added and calculate statistics for fragments of interest

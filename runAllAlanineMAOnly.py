@@ -23,8 +23,8 @@ fullEADict = {'C1-1':-0.8,
               'C3-4':-9.5}
 storeResults = {}
 #set the ordering of files as "Std/Smp/Std/..." (Alternate) or Std/Std/Std/Smp/Smp/Smp/Std/... (3Std3Smp)
-#orderStr = 'Alternate'
-orderStr = '3Std3Smp'
+orderStr = 'Alternate'
+#orderStr = '3Std3Smp'
 
 if orderStr == '3Std3Smp':
     fileLabels = ['Std 1', 'Std 2', 'Std 3', 'Smp 1', 'Smp 2','Smp 3', 'Std 4' 'Std 5', 'Std 6']
@@ -54,7 +54,7 @@ for testKey, EAValue in fullEADict.items():
         #cullOn/cullAmount: Cull any scans that fall more than cullAmount standard deviations away from the mean, looking at the parameter specified in cullOn. 
         #gcElutionOn/gcElutionTimes: If using a subset of the data (e.g. not the whole acquisition), set to True and specify the times to include. E.g. [(0,12)] will include scans from 0 to 12 minutes. 
         MAOutput, MAMerged, allOutputDict = dA.calc_Folder_Output(MAKey, cullOn='TIC*IT', cullAmount=3,\
-                       gcElutionOn=False, gcElutionTimes = [(0.00,12.00)], weightByNLHeight = False, debug = False, 
+                       gcElutionOn=False, gcElutionTimes = [(0.00,12.00)], weightByNLHeight = False, debug = True, 
                                   fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['Unsub'],
                       MNRelativeAbundance = False, massStrList = ['90'])
 
@@ -185,11 +185,15 @@ for testKey, replicateData in storeResults.items():
 
 
 #Output as .csv file.
+if orderStr == '3Std3Smp':
+    NFiles = 9
+else:
+    NFiles = 7
 with open('OutputTableMA.csv', 'w', newline='') as csvfile:
     write = csv.writer(csvfile, delimiter=',')
     for testKey, testData in storeFull.items():
         write.writerow(['Test','13C/Unsub','RSE','15N/Unsub','RSE','D/Unsub','RSE','18O/Unsub','RSE'])
-        for i in range(9):
+        for i in range(NFiles):
             constructRow = [testKey + fileLabels[i]]
             for varKey, varData in testData.items():
                 constructRow.append(varData['Avg'][i])
@@ -240,6 +244,12 @@ for testKey, replicateData in storeResults.items():
 
     #Propagate RSE for Alternating file order
     else:
+        
+        
+        storeAcquisitionError = {'13C/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]},
+           '15N/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]},
+           'D/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]},
+           '18O/Unsub':{'Avg':[],'Propagated_RSE':[],'Indices':[]}}
         for subKey in storeBySub.keys():
             for fileIdx, replicateAvg in enumerate(storeFull[testKey][subKey]['Avg']):
                 if fileIdx % 2 == 1:
@@ -261,10 +271,17 @@ for testKey, replicateData in storeResults.items():
                     avgErr = np.array([std1Error, std2Error]).mean()
                     comErr = np.sqrt(smpError**2 + avgErr **2)
                 
-                    storeBySub[subKey]['Avg'].append(1000*(avgRat-1))
-                    storeBySub[subKey]['Propagated_RSE'].append(1000* comErr)
-                    storeBySub[subKey]['Indices'].append(testKey)
+                    storeAcquisitionError[subKey]['Avg'].append(1000*(avgRat-1))
+                    storeAcquisitionError[subKey]['Propagated_RSE'].append(1000* comErr)
+                    storeAcquisitionError[subKey]['Indices'].append(testKey)
                     
+            ERMean = np.array(storeAcquisitionError[subKey]['Avg']).mean()
+            ERStd = np.array(storeAcquisitionError[subKey]['Avg']).std()
+            
+            storeBySub[subKey]['Avg'].append(ERMean)
+            storeBySub[subKey]['Propagated_RSE'].append(ERStd)
+            storeBySub[subKey]['Indices'].append(testKey)
+            
 #GENERATE OUTPUT PLOTS
 EAValues = []
 #We constrained the unlabelled standard as delta^13(C) = -12.5 vs VPDB. I plot the results as sample vs. this standard, not sample vs VPDB, so we shift the values appropriately. 
@@ -273,8 +290,11 @@ for subKey, subDelta in fullEADict.items():
     
 for subKey, subData in storeBySub.items():
     fig, cAx = plt.subplots(nrows = 1, ncols = 1, figsize = (8,3), dpi = 600)
-            
-    cAx.errorbar(range(len(EAValues)),subData['Avg'],subData['Propagated_RSE'],fmt = 'o', label = "Orbitrap")
+    
+    print(subData['Avg'])
+    print(len(EAValues))
+    print(subData['Propagated_RSE'])
+    cAx.errorbar(range(len(subData['Avg'])),subData['Avg'],subData['Propagated_RSE'],fmt = 'o', label = "Orbitrap")
     
     if subKey == '13C/Unsub':
         cAx.scatter(range(len(EAValues)),EAValues, marker = 's', facecolor = 'None',
