@@ -6,7 +6,7 @@ from datetime import date
 import numpy as np
 import matplotlib.pyplot as plt
 
-import DataAnalyzerWithPeakInteg as dA
+import DataAnalyzerMN as dA
 
 #20220419, Tim: This code reads and processes the molecular average data. I often run these .py files from a jupyter notebook because then it displays the plots in line. 
 

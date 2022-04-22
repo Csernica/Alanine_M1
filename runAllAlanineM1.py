@@ -10,14 +10,13 @@ import matplotlib.pyplot as plt
 import fragmentAndSimulate as fas
 import solveSystem as ss
 import readInput as ri
-import DataAnalyzerWithPeakInteg as dA
+import DataAnalyzerMN as dA
 import basicDeltaOperations as op
 import alanineTest
 
-#TO DO: ADD 'iterated' abundance correction scheme
-
 today = date.today()
 
+#Known EA Values, in case we use them to set U13C
 fullEADict = {'C1-1':-0.8,
               'C1-2':-4.7,
               'C1-3':-7.3,
@@ -31,15 +30,20 @@ fullEADict = {'C1-1':-0.8,
               'C3-3':-7.9,
               'C3-4':-9.5}
 
+#Run a subset of all files, indicated here
 toRun = ['C1-2']
 someEADict = {key:value for (key,value) in fullEADict.items() if key in toRun} 
 outputTable = {}
 
+#Repeat the process for each target of interest
 for testKey, EAValue in someEADict.items():
     M1Key = testKey + '_M1'
     MAKey = testKey + '_MA'
     
+    #BEGIN READING IN DATA
+    #Look for folders with the input data, with names specified by M1Key and MAKey
     if os.path.exists(M1Key) and os.path.exists(MAKey):
+        #Initialize an ouptut file
         outputTable[testKey] = {}
         print("Processing " + testKey)
         #Process M1
@@ -49,7 +53,7 @@ for testKey, EAValue in someEADict.items():
             fragmentIsotopeList.append(v)
 
         M1Output, M1Merged, allOutputDict = dA.calc_Folder_Output(M1Key, cullOn='TIC*IT', cullAmount=3,\
-                           gcElutionOn=True, gcElutionTimes = [(3.00,16.00)], weightByNLHeight = False, debug = False, 
+                           gcElutionOn=True, gcElutionTimes = [(3.00,16.00)], debug = False, 
                                       fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['13C'],
                           MNRelativeAbundance = True, massStrList = ['44'])
         
@@ -57,8 +61,9 @@ for testKey, EAValue in someEADict.items():
 
         with open(M1Key + '.json', 'w', encoding='utf-8') as f:
             json.dump(sampleOutputDict, f, ensure_ascii=False, indent=4)
+        #Finish processing M1; export as json
 
-        #Process MA; only using the M1 peaks
+        #Process MA; only using the M1 peaks (i.e. these measurements also observe 18O, Unsub; we do not use these)
         fragmentDict = {'90':['OMIT','D','13C','15N']}
 
         fragmentMostAbundant = ['13C']
@@ -67,7 +72,7 @@ for testKey, EAValue in someEADict.items():
             fragmentIsotopeList.append(v)
 
         MAOutput, MAMerged, allOutputDict = dA.calc_Folder_Output(MAKey, cullOn='TIC*IT', cullAmount=3,\
-                       gcElutionOn=True, gcElutionTimes = [(0.00,30.00)], weightByNLHeight = False, debug = False, 
+                       gcElutionOn=True, gcElutionTimes = [(0.00,30.00)], debug = False, 
                                   fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['13C'],
                       MNRelativeAbundance = True, massStrList = ['90'])
 
@@ -75,7 +80,9 @@ for testKey, EAValue in someEADict.items():
 
         with open(MAKey + '.json', 'w', encoding='utf-8') as f:
             json.dump(sampleOutputDict, f, ensure_ascii=False, indent=4)
+        #Finish processing MA data; export as json
 
+        #Put the data from MA and M1 into the same dictionary; these allows us to treat the data as two "fragments" for the M1 algorithm
         combinedResults = {}
         MAFileKeys = list(sampleOutputDictMA.keys())
         fileIdx = 0
@@ -88,19 +95,65 @@ for testKey, EAValue in someEADict.items():
             
         with open(testKey + '_M1_Combined.json', 'w', encoding='utf-8') as f:
             json.dump(combinedResults, f, ensure_ascii=False, indent=4)
+        #Export combined dataset as .json
+        #DONE READING IN DATA
 
-        #forward model of standard
+        #BEGIN APPLYING M1 ALGORITHM
+        #Generate forward model of standard
         deltas = [-12.3,-12.3,0,0,0,0]
         fragSubset = ['full','44']
-        df, expandedFrags, fragKeys, fragmentationDictionary = alanineTest.initializeAlanine(deltas, fragSubset, printHeavy = False)
+        molecularDataFrameStd, expandedFrags, fragKeys, fragmentationDictionary = alanineTest.initializeAlanine(deltas, fragSubset, printHeavy = False)
 
-        predictedMeasurement, MNDictStd, FF = alanineTest.simulateMeasurement(df, fragmentationDictionary, expandedFrags, fragKeys, 
+        predictedMeasurement, MNDictStd, FF = alanineTest.simulateMeasurement(molecularDataFrameStd, fragmentationDictionary, expandedFrags, fragKeys, 
                                                        abundanceThreshold = 0,
                                                        massThreshold = 1,
                                                          unresolvedDict = {},
                                                         outputFull = False,
                                                          disableProgress = True)
 
+
+        #Generate forward model of sample
+        labAmount = -(-12.3 - EAValue)*3
+        deltasLabel = deltas.copy()
+
+        #Modify forward model of sample based on the amount of label. We may wish to cut this, if we want to have no external knowledge
+        if testKey[:2] == 'C1':
+            deltasLabel[1] += labAmount
+        else:
+            deltasLabel[0] += labAmount / 2
+
+        molecularDataFrameSmp, expandedFrags, fragKeys, fragmentationDictionary = alanineTest.initializeAlanine(deltasLabel, fragSubset,
+                                                                                                    printHeavy = False)
+        forbiddenPeaks = {'M1':{'full':['17O']}}
+
+        predictedMeasurementLabel, MNDictSmp, FF = alanineTest.simulateMeasurement(molecularDataFrameSmp, fragmentationDictionary, expandedFrags, fragKeys, 
+                                                            abundanceThreshold = 0,
+                                                            massThreshold = 1,
+                                                                omitMeasurements = forbiddenPeaks,
+                                                            outputFull = False,
+                                                                disableProgress = True)
+
+        #Set U13C values used for M1 algorithm
+        #Read in molecular average dataset (i.e. 13C/Unsub)
+        with open(str(today) + 'MA.json') as f:
+            MAData = json.load(f)
+
+        testIdx = MAData['13C/Unsub']['Indices'].index(testKey)
+        #TO DO: Change to properly deal with concentration space
+        #Orbi13CVals are reported relative to standard, not in VPDB space, so shift them. 
+        Orbi13CVal = MAData['13C/Unsub']['Avg'][testIdx] - 12.3
+        Orbi13CErr = MAData['13C/Unsub']['Propagated_RSE'][testIdx]
+
+        #Multiply by 3 to go from R to U value
+        U13COrbi = op.concentrationToM1Ratio(op.deltaToConcentration('13C',Orbi13CVal)) * 3
+        U13CAppx = op.concentrationToM1Ratio(op.deltaToConcentration('13C',EAValue)) * 3
+
+        #U13C val, then the RSE in U value space for that constraint
+        U13CVals = [(U13COrbi, Orbi13CErr / 1000), (U13CAppx, 0.0001)]
+        U13CLabels = ['Orbitrap','EA']
+
+        #BEGIN M1 ALGORITHM
+        #Read in combined dataset
         processFragKeys = {'44':'44','full':'full'}
         SmpStdKeys = [True, False, True, False, True, False, True]
             
@@ -111,48 +164,12 @@ for testKey, EAValue in someEADict.items():
                                             standard = SmpStdKeys,
                                             processFragKeys = processFragKeys)
 
-        #Generate forward model of sample
-        labAmount = -(-12.3 - EAValue)*3
-        deltasLabel = deltas.copy()
-
-        #Modify forward model of sample based on the amount of label 
-        if testKey[:2] == 'C1':
-            deltasLabel[1] += labAmount
-        else:
-            deltasLabel[0] += labAmount / 2
-
-        dfLabel, expandedFrags, fragKeys, fragmentationDictionary = alanineTest.initializeAlanine(deltasLabel, fragSubset,
-                                                                                                    printHeavy = False)
-        forbiddenPeaks = {'M1':{'full':['17O']}}
-
-        predictedMeasurementLabel, MNDictSmp, FF = alanineTest.simulateMeasurement(dfLabel, fragmentationDictionary, expandedFrags, fragKeys, 
-                                                            abundanceThreshold = 0,
-                                                            massThreshold = 1,
-                                                                omitMeasurements = forbiddenPeaks,
-                                                            outputFull = False,
-                                                                disableProgress = True)
-
-        #solve system
-        with open(str(today) + 'MA.json') as f:
-            MAData = json.load(f)
-
-        testIdx = MAData['13C/Unsub']['Indices'].index(testKey)
-        #TO DO: Change to properly deal with concentration space
-        Orbidel13C = MAData['13C/Unsub']['Avg'][testIdx] - 12.3
-        Orbi13CErr = MAData['13C/Unsub']['Propagated_RSE'][testIdx]
-
-        U13COrbi = op.concentrationToM1Ratio(op.deltaToConcentration('13C',Orbidel13C)) * 3
-        U13CAppx = op.concentrationToM1Ratio(op.deltaToConcentration('13C',EAValue)) * 3
-        U15NAppx = op.concentrationToM1Ratio(op.deltaToConcentration('15N',0))
-
-        #U13C val, then the RSE in U value space for that constraint
-        U13CVals = [(U13COrbi, Orbi13CErr / 1000), (U13CAppx, 0.0001)]
-        U13CLabels = ['Orbitrap','EA']
-
+        #Repeat routine for both Orbitrap and EA constrained 13C values
         for U13CIdx, U13CConstraint in enumerate(U13CVals): 
             fullResults = {}
             replicateDataKeys = list(replicateData.keys())
 
+            #For each replicate. Note the first replicate of 44 frag is processed with the first replicate of full frag, despite these being different experiments
             for i in range(1,7,2):
                 firstBracket = replicateData[replicateDataKeys[i-1]]
                 secondBracket = replicateData[replicateDataKeys[i+1]]
@@ -160,17 +177,16 @@ for testKey, EAValue in someEADict.items():
                 processStandard = {'M1':{}}
                 for fragKey, fragInfo in firstBracket['M1'].items():
                     avgAbund = (np.array(fragInfo['Observed Abundance']) + np.array(secondBracket['M1'][fragKey]['Observed Abundance'])) / 2
-                    combinedErr = np.sqrt(np.array(fragInfo['Error'])**2 + np.array(secondBracket['M1'][fragKey]['Error'])**2)
+                    combinedErr = (np.array(fragInfo['Error']) + np.array(secondBracket['M1'][fragKey]['Error'])) / 2
                     processStandard['M1'][fragKey] = {'Subs':fragInfo['Subs'],
                                                         'Predicted Abundance':fragInfo['Predicted Abundance'],
                                                         'Observed Abundance':avgAbund,
                                                         'Error':combinedErr}
 
                 processSample = replicateData[replicateDataKeys[i]]
-                UValuesSmp = {'13C':{'Observed': U13CConstraint[0], 'Error': U13CConstraint[0] *U13CConstraint[1]},
-                                '15N':{'Observed': U15NAppx, 'Error': U15NAppx * 0.0001}}
+                UValuesSmp = {'13C':{'Observed': U13CConstraint[0], 'Error': U13CConstraint[0] *U13CConstraint[1]}}
 
-                isotopologuesDict = fas.isotopologueDataFrame(MNDictStd, df)
+                isotopologuesDict = fas.isotopologueDataFrame(MNDictStd, molecularDataFrameStd)
                 OValueCorrection = ss.OValueCorrectTheoretical(predictedMeasurement, 
                                                                 processSample,
                                                                 massThreshold = 1)
@@ -178,14 +194,15 @@ for testKey, EAValue in someEADict.items():
                 M1Results = ss.M1MonteCarlo(processStandard, processSample, OValueCorrection, isotopologuesDict,
                                             fragmentationDictionary, 
                                             N = 1000, GJ = False, debugMatrix = False,
-                                            perturbTheoryOAmt = 0.0003, disableProgress = True)
+                                            perturbTheoryOAmt = 0.0003, disableProgress = False)
 
-                processedResults = ss.processM1MCResults(M1Results, UValuesSmp, isotopologuesDict, df, GJ = False, 
+                processedResults = ss.processM1MCResults(M1Results, UValuesSmp, isotopologuesDict, molecularDataFrameStd, GJ = False, 
                                                             UMNSub = ['13C'], disableProgress = True)
 
+                ss.updateSiteSpecificDfM1MC(processedResults, molecularDataFrameStd)
+    
                 fullResults['Replicate ' + str(i - 3)] = processedResults
-
-                ss.updateSiteSpecificDfM1MC(processedResults, df)
+                #END M1 ALGORITHM
 
             #store results 
             fullResultsMeansStds = {'Mean':[],'Std':[],'ID':[]}
@@ -198,7 +215,7 @@ for testKey, EAValue in someEADict.items():
 
             fullResultsMeansStds['Mean'] = np.array(fullResultsMeansStds['Mean']).T
             fullResultsMeansStds['Std'] = np.array(fullResultsMeansStds['Std']).T
-            fullResultsMeansStds['ID'] = df.index
+            fullResultsMeansStds['ID'] = molecularDataFrameStd.index
             
             outputTable[testKey] = copy.deepcopy(fullResultsMeansStds)
 
@@ -209,8 +226,8 @@ for testKey, EAValue in someEADict.items():
             observedMeans = []
             observedStds = []
             nReplicates = 3
-            for siteIdx, site in enumerate(df.index):
-                if site in df.index:
+            for siteIdx, site in enumerate(molecularDataFrameStd.index):
+                if site in molecularDataFrameStd.index:
                     observedMeans += list(fullResultsMeansStds['Mean'][siteIdx])
                     observedStds += list(fullResultsMeansStds['Std'][siteIdx])
 
@@ -229,7 +246,7 @@ for testKey, EAValue in someEADict.items():
             xticks = [x*nReplicates + 1 for x in range(nRatios)]
             ax.set_xticks(xticks)
             #ticklabels = [df.index[i] for i in range(len(xticks))]
-            ticklabels = df.index
+            ticklabels = molecularDataFrameStd.index
             ax.set_xticklabels(ticklabels, rotation = 45)
             ax.set_ylabel("Relative Sample Standard Delta")
             ax.set_title(testKey + " Results")
