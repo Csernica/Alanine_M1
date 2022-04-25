@@ -2,6 +2,7 @@ from datetime import date
 import copy
 import os
 import json
+import csv 
 
 import numpy as np
 import matplotlib
@@ -15,6 +16,7 @@ import basicDeltaOperations as op
 import alanineTest
 
 today = date.today()
+#TO DO: Investigate why results are slightly different (worse?) than previous EA Only runs. Presumably due to change in full dataset, but is it really worse? 
 
 #Known EA Values, in case we use them to set U13C
 fullEADict = {'C1-1':-0.8,
@@ -44,7 +46,6 @@ for testKey, EAValue in someEADict.items():
     #Look for folders with the input data, with names specified by M1Key and MAKey
     if os.path.exists(M1Key) and os.path.exists(MAKey):
         #Initialize an ouptut file
-        outputTable[testKey] = {}
         print("Processing " + testKey)
         #Process M1
         fragmentDict = {'44':['D','13C','15N','Unsub']}
@@ -124,12 +125,11 @@ for testKey, EAValue in someEADict.items():
 
         molecularDataFrameSmp, expandedFrags, fragKeys, fragmentationDictionary = alanineTest.initializeAlanine(deltasLabel, fragSubset,
                                                                                                     printHeavy = False)
-        forbiddenPeaks = {'M1':{'full':['17O']}}
 
         predictedMeasurementLabel, MNDictSmp, FF = alanineTest.simulateMeasurement(molecularDataFrameSmp, fragmentationDictionary, expandedFrags, fragKeys, 
                                                             abundanceThreshold = 0,
                                                             massThreshold = 1,
-                                                                omitMeasurements = forbiddenPeaks,
+                                                                omitMeasurements = {},
                                                             outputFull = False,
                                                                 disableProgress = True)
 
@@ -217,7 +217,7 @@ for testKey, EAValue in someEADict.items():
             fullResultsMeansStds['Std'] = np.array(fullResultsMeansStds['Std']).T
             fullResultsMeansStds['ID'] = molecularDataFrameStd.index
             
-            outputTable[testKey] = copy.deepcopy(fullResultsMeansStds)
+            outputTable[testKey + U13CLabels[U13CIdx]] = copy.deepcopy(fullResultsMeansStds)
 
             #plot results
             matplotlib.rcParams.update({'errorbar.capsize': 5})
@@ -275,3 +275,25 @@ for testKey, EAValue in someEADict.items():
             for d in toDelete:
                 if os.path.exists(d):
                     os.remove(d)
+
+###EXPORT AS CSV
+allOutput = {}
+
+for testKey, testData in outputTable.items():
+    allOutput[testKey] = {}
+    processTable = {}
+
+    for i, identity in enumerate(list(testData['ID'])):
+        processTable[identity] = []
+        for j, rep in enumerate(testData['Mean'][i]):
+            processTable[identity].append(rep)
+            processTable[identity].append(testData['Std'][i][j])
+
+        allOutput[testKey] = copy.deepcopy(processTable)
+
+with open('OutputTable.csv', 'w', newline='') as csvfile:
+    write = csv.writer(csvfile, delimiter=',')
+    for testKey, testData in allOutput.items():
+        write.writerow([testKey,'','MEAN 1','Monte Carlo Standard Deviation 1','MEAN 2','Monte Carlo Standard Deviation 2','MEAN 3','Monte Carlo Standard Deviation 3'])
+        for varKey, varData in testData.items():
+            write.writerow([testKey, varKey] + varData)

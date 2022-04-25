@@ -60,7 +60,7 @@ for testKey, EAValue in fullEADict.items():
             #cullOn/cullAmount: Cull any scans that fall more than cullAmount standard deviations away from the mean, looking at the parameter specified in cullOn. 
             #gcElutionOn/gcElutionTimes: If using a subset of the data (e.g. not the whole acquisition), set to True and specify the times to include. E.g. [(0,12)] will include scans from 0 to 12 minutes. 
             MAOutput, MAMerged, allOutputDict = dA.calc_Folder_Output(MAKey, cullOn='TIC*IT', cullAmount=3,\
-                        gcElutionOn=False, gcElutionTimes = [(0.00,12.00)], weightByNLHeight = False, debug = False, 
+                        gcElutionOn=False, gcElutionTimes = [(0.00,12.00)], debug = False, 
                                     fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['Unsub'],
                         MNRelativeAbundance = False, massStrList = ['90'])
 
