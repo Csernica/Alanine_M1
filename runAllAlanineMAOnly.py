@@ -29,7 +29,7 @@ storeResults = {}
 orderStr = 'Alternate'
 #orderStr = '3Std3Smp'
 
-toRun = ['C1-2']
+toRun = ['C1-1']
 
 if orderStr == '3Std3Smp':
     fileLabels = ['Std 1', 'Std 2', 'Std 3', 'Smp 1', 'Smp 2','Smp 3', 'Std 4', 'Std 5', 'Std 6']
@@ -60,7 +60,7 @@ for testKey, EAValue in fullEADict.items():
             #cullOn/cullAmount: Cull any scans that fall more than cullAmount standard deviations away from the mean, looking at the parameter specified in cullOn. 
             #gcElutionOn/gcElutionTimes: If using a subset of the data (e.g. not the whole acquisition), set to True and specify the times to include. E.g. [(0,12)] will include scans from 0 to 12 minutes. 
             MAOutput, MAMerged, allOutputDict = dA.calc_Folder_Output(MAKey, cullOn='TIC*IT', cullAmount=3,\
-                        gcElutionOn=False, gcElutionTimes = [(0.00,12.00)], debug = False, 
+                        gcElutionOn=False, gcElutionTimes = [(7.00,20.00)], debug = False, 
                                     fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['Unsub'],
                         MNRelativeAbundance = False, massStrList = ['90'])
 
@@ -176,10 +176,10 @@ for testKey, EAValue in fullEADict.items():
 storeFull = {}
 
 for testKey, replicateData in storeResults.items():
-    storeFull[testKey] = {'13C/Unsub':{'Avg':[],'RSE':[],'Indices':[]},
-           '15N/Unsub':{'Avg':[],'RSE':[],'Indices':[]},
-           'D/Unsub':{'Avg':[],'RSE':[],'Indices':[]},
-           '18O/Unsub':{'Avg':[],'RSE':[],'Indices':[]}}
+    storeFull[testKey] = {'13C/Unsub':{'Avg':[],'RSE':[],'SN':[],'Indices':[]},
+           '15N/Unsub':{'Avg':[],'RSE':[],'SN':[],'Indices':[]},
+           'D/Unsub':{'Avg':[],'RSE':[],'SN':[],'Indices':[]},
+           '18O/Unsub':{'Avg':[],'RSE':[],'SN':[],'Indices':[]}}
     
 #iterate through results
 for testKey, replicateData in storeResults.items():
@@ -188,6 +188,7 @@ for testKey, replicateData in storeResults.items():
         for fileKey, fileData in replicateData.items():
             storeFull[testKey][subKey]['Avg'].append(fileData['90'][subKey]['Average'])
             storeFull[testKey][subKey]['RSE'].append(fileData['90'][subKey]['RelStdError'])
+            storeFull[testKey][subKey]['SN'].append(fileData['90'][subKey]['ShotNoise'])
 
 
 #Output as .csv file.
@@ -198,12 +199,13 @@ else:
 with open('OutputTableMA.csv', 'w', newline='') as csvfile:
     write = csv.writer(csvfile, delimiter=',')
     for testKey, testData in storeFull.items():
-        write.writerow(['Test','13C/Unsub','RSE','15N/Unsub','RSE','D/Unsub','RSE','18O/Unsub','RSE'])
+        write.writerow(['Sample','13C/Unsub','RSE','SN','15N/Unsub','RSE','SN','D/Unsub','RSE','SN','18O/Unsub','RSE','SN'])
         for i in range(NFiles):
             constructRow = [testKey + fileLabels[i]]
             for varKey, varData in testData.items():
                 constructRow.append(varData['Avg'][i])
                 constructRow.append(varData['RSE'][i])
+                constructRow.append(varData['SN'][i])
                 
             write.writerow(constructRow)
 
