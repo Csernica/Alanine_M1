@@ -7,8 +7,6 @@ import sys
 sys.path.append(os.path.join(sys.path[0],'Alanine_Script'))
 
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 
 import Alanine_Script.fragmentAndSimulate as fas
 import Alanine_Script.solveSystem as ss
@@ -20,18 +18,18 @@ import Alanine_Script.alanineInit as alanineInit
 today = date.today()
 
 #Known EA Values, in case we use them to set U13C
-fullEADict = {'C1-1':-0.8,
-              'C1-2':-4.7,
-              'C1-3':-7.3,
-              'C1-4':-8.8,
-              'C2-1':-3.1,
-              'C2-2':-7.1,
-              'C2-3':-8.8,
-              'C2-4':-10,
-              'C3-1':1.7,
-              'C3-2': -5.7,
-              'C3-3':-7.9,
-              'C3-4':-9.5}
+fullEADict = {'C1-1':{'Value':-0.8,'Error':0.1},
+              'C1-2':{'Value':-4.7,'Error':0.1},
+              'C1-3':{'Value':-7.3,'Error':0.1},
+              'C1-4':{'Value':-8.8,'Error':0.1},
+              'C2-1':{'Value':-3.1,'Error':0.4},
+              'C2-2':{'Value':-7.1,'Error':0.1},
+              'C2-3':{'Value':-8.8,'Error':0.1},
+              'C2-4':{'Value':-10, 'Error':0.1},
+              'C3-1':{'Value': 1.7,'Error':0.3},
+              'C3-2':{'Value':-5.7,'Error':0.1},
+              'C3-3':{'Value':-7.9,'Error':0.1},
+              'C3-4':{'Value':-9.5,'Error':0.1}}
 
 #Run a subset of files for the alanines in the 'toRun' list.
 toRun = ['C1-1','C1-2','C1-3','C1-4','C2-1','C2-2','C2-3','C2-4','C3-1','C3-2','C3-3','C3-4']
@@ -40,7 +38,9 @@ someEADict = {key:value for (key,value) in fullEADict.items() if key in toRun}
 allAlanineOutput = {}
 
 #For each entry in toRun, run the analysis
-for alanineKey, EAValue in someEADict.items():
+for alanineKey, alanineData in someEADict.items():
+    EAValue = alanineData['Value']
+    EAError = alanineData['Error']
     if alanineKey in toRun:
         M1Key = alanineKey + '_M1'
         MAKey = alanineKey + '_MA'
@@ -169,8 +169,8 @@ for alanineKey, EAValue in someEADict.items():
             #END GENERATE FORWARD MODEL
             #BEGIN SETTING U13C VALUES FOR M+1 ALGORITHM
             #We can set these either from our molecular average measurement of 13C/Unsub (all Orbitrap measurements) or by using the EA results for each alanine
-            #First the Orbitrap: read in molecular average dataset (i.e. 13C/Unsub) (this assumes that runAllAlanineMA has been run today)
-            with open(str(today) + 'MA.json') as f:
+            #First the Orbitrap: read in molecular average dataset (i.e. 13C/Unsub)
+            with open("MAAlgorithmResults.json") as f:
                 MAData = json.load(f)
 
             alanineIdx = MAData['13C/Unsub']['Indices'].index(alanineKey)
@@ -185,7 +185,8 @@ for alanineKey, EAValue in someEADict.items():
             U13CEA = op.concentrationToM1Ratio(op.deltaToConcentration('13C',EAValue)) * 3
 
             #Put these in a tuple, the expected input for the M+N algorithm
-            U13CVals = [(U13COrbi, Orbi13CErr / 1000), (U13CEA, 0.0001)]
+            #Change EA error from delta space to U space
+            U13CVals = [(U13COrbi, Orbi13CErr / 1000), (U13CEA, EAError * 0.001)]
             U13CLabels = ['Orbitrap','EA']
             #END SETTING U13C VALUES FOR M+1 ALGORITHM
 
@@ -260,7 +261,7 @@ for alanineKey, EAValue in someEADict.items():
                 meanM1AlgorithmResults['Std'] = np.array(meanM1AlgorithmResults['Std']).T
                 meanM1AlgorithmResults['ID'] = molecularDataFrameStd.index
                 
-                allAlanineOutput[alanineKey + U13CLabels[U13CIdx]] = copy.deepcopy(meanM1AlgorithmResults)
+                allAlanineOutput[alanineKey + '_' + U13CLabels[U13CIdx]] = copy.deepcopy(meanM1AlgorithmResults)
 
                 #Delete .json files which were generated for each read in file, so we don't end up with 36 (3 * 12) .jsons cluttering up the directory. If you want to save and investigate these, disable this function. 
                 toDelete = ["Fragment 44 " + alanineKey + ".json", "Fragment 90 " + alanineKey + '.json', alanineKey + 'Combined.json']
@@ -271,23 +272,46 @@ for alanineKey, EAValue in someEADict.items():
                 #END PREPARE TO OUTPUT
 
 #EXPORT AS CSV
-allOutput = {}
+forCSV = {}
 
+#Pull out means and standard deviations into lists to make it easy to add these to a .csv
 for alanineKey, alanineData in allAlanineOutput.items():
-    allOutput[alanineKey] = {}
+    forCSV[alanineKey] = {}
     processTable = {}
 
-    for i, identity in enumerate(list(alanineData['ID'])):
-        processTable[identity] = []
-        for j, rep in enumerate(alanineData['Mean'][i]):
-            processTable[identity].append(rep)
-            processTable[identity].append(alanineData['Std'][i][j])
+    for siteIndex, siteName in enumerate(list(alanineData['ID'])):
+        processTable[siteIndex] = []
+        for repIdx, repMean in enumerate(alanineData['Mean'][siteIndex]):
+            processTable[siteIndex].append(repMean)
+            processTable[siteIndex].append(alanineData['Std'][siteIndex][repIdx])
 
-        allOutput[alanineKey] = copy.deepcopy(processTable)
+        forCSV[alanineKey] = copy.deepcopy(processTable)
 
-with open('M1AlgorithmResults.csv', 'w', newline='') as csvfile:
+#Write csv row by row, giving means and standard deviations from the monte carlo method
+with open('M1Table.csv', 'w', newline='') as csvfile:
     write = csv.writer(csvfile, delimiter=',')
-    for alanineKey, testData in allOutput.items():
+    for alanineKey, testData in forCSV.items():
         write.writerow([alanineKey,'','MEAN 1','Monte Carlo Standard Deviation 1','MEAN 2','Monte Carlo Standard Deviation 2','MEAN 3','Monte Carlo Standard Deviation 3'])
         for varKey, varData in testData.items():
             write.writerow([alanineKey, varKey] + varData)
+
+#REPORT ONE NUMBER SUMMARIES 
+jsonOutput = {}
+
+for alanineKey, alanineData in allAlanineOutput.items():
+    #Have results for C1-1_Orbitrap and C1-1_EA; combine them into a single dictionary entry
+    alanineSmpKey, OrbiEAKey = alanineKey.split('_')
+    if alanineSmpKey not in jsonOutput:
+        jsonOutput[alanineSmpKey] = {}
+        
+    for siteIndex, siteName in enumerate(list(alanineData['ID'])):
+        if siteName not in jsonOutput[alanineSmpKey]:
+            jsonOutput[alanineSmpKey][siteName] = {}
+
+        jsonOutput[alanineSmpKey][siteName][OrbiEAKey] = {}
+        jsonOutput[alanineSmpKey][siteName][OrbiEAKey]['Average'] = alanineData['Mean'][siteIndex].mean()
+        jsonOutput[alanineSmpKey][siteName][OrbiEAKey]['Experimental Reproducibility'] = alanineData['Mean'][siteIndex].std()
+        jsonOutput[alanineSmpKey][siteName][OrbiEAKey]['Average Individual Error'] = alanineData['Std'][siteIndex].mean()
+
+with open("M1AlgorithmResults.json", 'w', encoding='utf-8') as f:
+    json.dump(jsonOutput, f, ensure_ascii=False, indent=4)

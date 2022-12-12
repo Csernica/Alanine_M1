@@ -4,24 +4,23 @@ import json
 from datetime import date
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 import Alanine_Script.DataAnalyzerMN as dA
 
 today = date.today()
 #EA measured 13C vs VPDB values 
-fullEADict = {'C1-1':-0.8,
-              'C1-2':-4.7,
-              'C1-3':-7.3,
-              'C1-4':-8.8,
-              'C2-1':-3.1,
-              'C2-2':-7.1,
-              'C2-3':-8.8,
-              'C2-4':-10,
-              'C3-1':1.7,
-              'C3-2': -5.7,
-              'C3-3':-7.9,
-              'C3-4':-9.5}
+fullEADict = {'C1-1':{'Value':-0.8,'Error':0.1},
+              'C1-2':{'Value':-4.7,'Error':0.1},
+              'C1-3':{'Value':-7.3,'Error':0.1},
+              'C1-4':{'Value':-8.8,'Error':0.1},
+              'C2-1':{'Value':-3.1,'Error':0.4},
+              'C2-2':{'Value':-7.1,'Error':0.1},
+              'C2-3':{'Value':-8.8,'Error':0.1},
+              'C2-4':{'Value':-10, 'Error':0.1},
+              'C3-1':{'Value': 1.7,'Error':0.3},
+              'C3-2':{'Value':-5.7,'Error':0.1},
+              'C3-3':{'Value':-7.9,'Error':0.1},
+              'C3-4':{'Value':-9.5,'Error':0.1}}
 
 storeResults = {}
 
@@ -77,7 +76,7 @@ for alanineKey, replicateData in storeResults.items():
 
 #Output as .csv file.
 NFiles = 9
-with open('OutputTableMA.csv', 'w', newline='') as csvfile:
+with open('MATable.csv', 'w', newline='') as csvfile:
     write = csv.writer(csvfile, delimiter=',')
     for alanineKey, testData in storeFull.items():
         write.writerow(['Sample','13C/Unsub','RSE','SN','15N/Unsub','RSE','SN','D/Unsub','RSE','SN','18O/Unsub','RSE','SN'])
@@ -102,15 +101,12 @@ for alanineKey, replicateData in storeResults.items():
     for subKey in storeBySub.keys():
         stds = []
         smps = []
-        fIdx = 0
         #THIS IS WHERE WE SET THE ORDER FOR STANDARDIZATION. If the file has index 3,4,5, we add to smps list. Otherwise we add to stds list. 
-        for fileKey, fileData in replicateData.items():
-            if fIdx not in [3,4,5]:
+        for fileIdx, (fileKey, fileData) in enumerate(replicateData.items()):
+            if fileIdx not in [3,4,5]:
                 stds.append(fileData['90'][subKey]['Average'])
             else:
                 smps.append(fileData['90'][subKey]['Average'])
-                
-            fIdx += 1
 
         #calculate average sample/standard comparison
         avg = np.array(smps).mean() / np.array(stds).mean()
@@ -130,5 +126,5 @@ for alanineKey, replicateData in storeResults.items():
         storeBySub[subKey]['Propagated_RSE'].append(1000* propRSE)
         storeBySub[subKey]['Indices'].append(alanineKey)
 
-with open(str(today) + 'MA.json', 'w', encoding='utf-8') as f:
+with open("MAAlgorithmResults.json", 'w', encoding='utf-8') as f:
     json.dump(storeBySub, f, ensure_ascii=False, indent=4)
