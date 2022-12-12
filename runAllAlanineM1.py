@@ -8,12 +8,12 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-import fragmentAndSimulate as fas
-import solveSystem as ss
-import readInput as ri
-import DataAnalyzerMN as dA
-import basicDeltaOperations as op
-import alanineTest
+import Csernica_Alanine_Script.fragmentAndSimulate as fas
+import Csernica_Alanine_Script.solveSystem as ss
+import Csernica_Alanine_Script.readInput as ri
+import Csernica_Alanine_Script.DataAnalyzerMN as dA
+import Csernica_Alanine_Script.basicDeltaOperations as op
+import Csernica_Alanine_Script.alanineTest as alanineTest
 
 today = date.today()
 #TO DO: Investigate why results are slightly different (worse?) than previous EA Only runs. Presumably due to change in full dataset, but is it really worse? 
@@ -33,7 +33,7 @@ fullEADict = {'C1-1':-0.8,
               'C3-4':-9.5}
 
 #Run a subset of all files, indicated here
-toRun = ['C1-2']
+toRun = ['C1-1','C1-2','C1-3','C1-4','C2-1','C2-2','C2-3','C2-4','C3-1','C3-2','C3-3','C3-4']
 someEADict = {key:value for (key,value) in fullEADict.items() if key in toRun} 
 outputTable = {}
 
@@ -55,7 +55,7 @@ for testKey, EAValue in someEADict.items():
 
         M1Output, M1Merged, allOutputDict = dA.calc_Folder_Output(M1Key, cullOn='TIC*IT', cullAmount=3,\
                            gcElutionOn=True, gcElutionTimes = [(3.00,16.00)], debug = False, 
-                                      fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['13C'],
+                            fragmentIsotopeList = fragmentIsotopeList, fragmentMostAbundant = ['13C'],
                           MNRelativeAbundance = True, massStrList = ['44'])
         
         sampleOutputDict = dA.folderOutputToDict(M1Output)
@@ -111,7 +111,6 @@ for testKey, EAValue in someEADict.items():
                                                          unresolvedDict = {},
                                                         outputFull = False,
                                                          disableProgress = True)
-
 
         #Generate forward model of sample
         labAmount = -(-12.3 - EAValue)*3
@@ -170,7 +169,7 @@ for testKey, EAValue in someEADict.items():
             replicateDataKeys = list(replicateData.keys())
 
             #For each replicate. Note the first replicate of 44 frag is processed with the first replicate of full frag, despite these being different experiments
-            for i in range(1,7,2):
+            for i in range(1,len(replicateDataKeys),2):
                 firstBracket = replicateData[replicateDataKeys[i-1]]
                 secondBracket = replicateData[replicateDataKeys[i+1]]
 
@@ -218,57 +217,6 @@ for testKey, EAValue in someEADict.items():
             fullResultsMeansStds['ID'] = molecularDataFrameStd.index
             
             outputTable[testKey + U13CLabels[U13CIdx]] = copy.deepcopy(fullResultsMeansStds)
-
-            #plot results
-            matplotlib.rcParams.update({'errorbar.capsize': 5})
-            fig, ax = plt.subplots(figsize = (8,4), dpi = 600)
-
-            observedMeans = []
-            observedStds = []
-            nReplicates = 3
-            for siteIdx, site in enumerate(molecularDataFrameStd.index):
-                if site in molecularDataFrameStd.index:
-                    observedMeans += list(fullResultsMeansStds['Mean'][siteIdx])
-                    observedStds += list(fullResultsMeansStds['Std'][siteIdx])
-
-            means = np.array(observedMeans)
-            std = np.array(observedStds)
-            xs = np.array(range(len(means)))
-
-            colors = ['k','tab:blue','tab:red','tab:brown','tab:purple']
-            markers = ['o','s','^','h','D']
-            labels = ['Replicate 1', 'Replicate 2','Replicate 3', 'Replicate 4', 'Replicate 5']
-            for i in range(nReplicates):
-                ax.errorbar(xs[i::nReplicates],means[i::nReplicates],std[i::nReplicates],
-                            fmt = markers[i], c= colors[i], label = labels[i])
-
-            nRatios = len(means) // nReplicates
-            xticks = [x*nReplicates + 1 for x in range(nRatios)]
-            ax.set_xticks(xticks)
-            #ticklabels = [df.index[i] for i in range(len(xticks))]
-            ticklabels = molecularDataFrameStd.index
-            ax.set_xticklabels(ticklabels, rotation = 45)
-            ax.set_ylabel("Relative Sample Standard Delta")
-            ax.set_title(testKey + " Results")
-            #ax.hlines([1.0015,1.0005],14.5,17.5, color = 'purple',linestyle = '--',label = "33S Based on Mass Scaling")
-            #ax.set_ylim(-20,20)
-
-            ax.hlines(0,0,18,color = 'k', linestyle = '--')
-
-            if testKey[:2] == 'C1':
-                ax.hlines(labAmount,0,18,color = 'purple', linestyle = '--', label = 'Calculated Ccarboxyl Enrichment')
-
-            else:
-                ax.hlines(labAmount / 2,0,18,color = 'purple', linestyle = '--', label = 'Calculated Calphabeta Enrichment')
-
-            for i, tick in enumerate(xticks):
-                    if i % 2 == 1:
-                        ax.axvspan(tick - nReplicates / 2, tick + nReplicates / 2 , alpha=0.5, color='gray')
-
-            plt.ylim(-10,40)
-            plt.legend(frameon=True,loc = 'upper right')
-
-            plt.savefig("M1Output" + U13CLabels[U13CIdx] + ".png")
 
             toDelete = [MAKey + '.json', M1Key + '.json', testKey + '_M1_Combined.json']
 
