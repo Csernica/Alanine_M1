@@ -32,7 +32,7 @@ fullEADict = {'C1-1':{'Value':-0.8,'Error':0.1},
               'C3-4':{'Value':-9.5,'Error':0.1}}
 
 #Run a subset of files for the alanines in the 'toRun' list.
-toRun = ['C1-1','C1-2','C1-3','C1-4','C2-1','C2-2','C2-3','C2-4','C3-1','C3-2','C3-3','C3-4']
+#toRun = ['C1-1','C1-2','C1-3','C1-4','C2-1','C2-2','C2-3','C2-4','C3-1','C3-2','C3-3','C3-4']
 toRun = ['C1-1']
 someEADict = {key:value for (key,value) in fullEADict.items() if key in toRun} 
 allAlanineOutput = {}
@@ -174,7 +174,7 @@ for alanineKey, alanineData in someEADict.items():
                 MAData = json.load(f)
 
             alanineIdx = MAData['13C/Unsub']['Indices'].index(alanineKey)
-            #Orbi13CVals are reported relative to standard, not in VPDB space, so shift them. 
+            #Orbi13CVals are reported relative to standard, not in absolute (anchored) space, so shift them. 
             Orbi13CVal = MAData['13C/Unsub']['Avg'][alanineIdx] - 12.3
             Orbi13CErr = MAData['13C/Unsub']['Propagated_RSE'][alanineIdx]
 
@@ -249,16 +249,26 @@ for alanineKey, alanineData in someEADict.items():
 
                 #BEGIN PREPARE TO OUTPUT 
                 #Take the average and standard deviations of the N monte carlo runs
-                meanM1AlgorithmResults = {'Mean':[],'Std':[],'ID':[]}
+                meanM1AlgorithmResults = {'Mean Anchored Deltas':[],'Std Anchored Deltas':[],'Mean Relative Deltas':[],'Std Relative Deltas':[],'ID':[]}
                 for replicate, replicateInfo in M1AlgorithmResults.items():
-                    mean = np.array(replicateInfo['Relative Deltas']).T.mean(axis = 1)
-                    std = np.array(replicateInfo['Relative Deltas']).T.std(axis = 1)
+                    meanRel = np.array(replicateInfo['Relative Deltas']).T.mean(axis = 1)
+                    stdRel = np.array(replicateInfo['Relative Deltas']).T.std(axis = 1)
 
-                    meanM1AlgorithmResults['Mean'].append(mean)
-                    meanM1AlgorithmResults['Std'].append(std)
+                    meanM1AlgorithmResults['Mean Relative Deltas'].append(meanRel)
+                    meanM1AlgorithmResults['Std Relative Deltas'].append(stdRel)
 
-                meanM1AlgorithmResults['Mean'] = np.array(meanM1AlgorithmResults['Mean']).T
-                meanM1AlgorithmResults['Std'] = np.array(meanM1AlgorithmResults['Std']).T
+                    meanAnchored = np.array(replicateInfo['Anchored Deltas']).T.mean(axis = 1)
+                    stdAnchored = np.array(replicateInfo['Anchored Deltas']).T.std(axis = 1)
+
+                    meanM1AlgorithmResults['Mean Anchored Deltas'].append(meanAnchored)
+                    meanM1AlgorithmResults['Std Anchored Deltas'].append(stdAnchored)
+
+                meanM1AlgorithmResults['Mean Relative Deltas'] = np.array(meanM1AlgorithmResults['Mean Relative Deltas']).T
+                meanM1AlgorithmResults['Std Relative Deltas'] = np.array(meanM1AlgorithmResults['Std Relative Deltas']).T
+                
+                meanM1AlgorithmResults['Mean Anchored Deltas'] = np.array(meanM1AlgorithmResults['Mean Anchored Deltas']).T
+                meanM1AlgorithmResults['Std Anchored Deltas'] = np.array(meanM1AlgorithmResults['Std Anchored Deltas']).T
+                
                 meanM1AlgorithmResults['ID'] = molecularDataFrameStd.index
                 
                 allAlanineOutput[alanineKey + '_' + U13CLabels[U13CIdx]] = copy.deepcopy(meanM1AlgorithmResults)
@@ -276,16 +286,18 @@ forCSV = {}
 
 #Pull out means and standard deviations into lists to make it easy to add these to a .csv
 for alanineKey, alanineData in allAlanineOutput.items():
-    forCSV[alanineKey] = {}
-    processTable = {}
+    for reportingMethod in ['Relative','Anchored']:
+        thisOutputStr = alanineKey + ' ' + reportingMethod
+        forCSV[thisOutputStr] = {}
+        processTable = {}
 
-    for siteIndex, siteName in enumerate(list(alanineData['ID'])):
-        processTable[siteIndex] = []
-        for repIdx, repMean in enumerate(alanineData['Mean'][siteIndex]):
-            processTable[siteIndex].append(repMean)
-            processTable[siteIndex].append(alanineData['Std'][siteIndex][repIdx])
+        for siteIndex, siteName in enumerate(list(alanineData['ID'])):
+            processTable[siteName] = []
+            for repIdx, repMean in enumerate(alanineData['Mean ' + reportingMethod + ' Deltas'][siteIndex]):
+                processTable[siteName].append(repMean)
+                processTable[siteName].append(alanineData['Std ' + reportingMethod + ' Deltas'][siteIndex][repIdx])
 
-        forCSV[alanineKey] = copy.deepcopy(processTable)
+            forCSV[thisOutputStr] = copy.deepcopy(processTable)
 
 #Write csv row by row, giving means and standard deviations from the monte carlo method
 with open('M1Table.csv', 'w', newline='') as csvfile:
@@ -299,19 +311,23 @@ with open('M1Table.csv', 'w', newline='') as csvfile:
 jsonOutput = {}
 
 for alanineKey, alanineData in allAlanineOutput.items():
-    #Have results for C1-1_Orbitrap and C1-1_EA; combine them into a single dictionary entry
-    alanineSmpKey, OrbiEAKey = alanineKey.split('_')
-    if alanineSmpKey not in jsonOutput:
-        jsonOutput[alanineSmpKey] = {}
-        
-    for siteIndex, siteName in enumerate(list(alanineData['ID'])):
-        if siteName not in jsonOutput[alanineSmpKey]:
-            jsonOutput[alanineSmpKey][siteName] = {}
+    for reportingMethod in ['Relative', 'Anchored']:
+        #Have results for C1-1_Orbitrap and C1-1_EA; combine them into a single dictionary entry
+        alanineSmpKey, OrbiEAKey = alanineKey.split('_')
+        if alanineSmpKey not in jsonOutput:
+            jsonOutput[alanineSmpKey] = {}
 
-        jsonOutput[alanineSmpKey][siteName][OrbiEAKey] = {}
-        jsonOutput[alanineSmpKey][siteName][OrbiEAKey]['Average'] = alanineData['Mean'][siteIndex].mean()
-        jsonOutput[alanineSmpKey][siteName][OrbiEAKey]['Experimental Reproducibility'] = alanineData['Mean'][siteIndex].std()
-        jsonOutput[alanineSmpKey][siteName][OrbiEAKey]['Average Individual Error'] = alanineData['Std'][siteIndex].mean()
+        if reportingMethod not in jsonOutput[alanineSmpKey]:
+            jsonOutput[alanineSmpKey][reportingMethod] = {}
+            
+        for siteIndex, siteName in enumerate(list(alanineData['ID'])):
+            if siteName not in jsonOutput[alanineSmpKey]:
+                jsonOutput[alanineSmpKey][reportingMethod][siteName] = {}
+
+            jsonOutput[alanineSmpKey][reportingMethod][siteName][OrbiEAKey] = {}
+            jsonOutput[alanineSmpKey][reportingMethod][siteName][OrbiEAKey]['Average'] = alanineData['Mean ' + reportingMethod + ' Deltas'][siteIndex].mean()
+            jsonOutput[alanineSmpKey][reportingMethod][siteName][OrbiEAKey]['Experimental Reproducibility'] = alanineData['Mean ' + reportingMethod + ' Deltas'][siteIndex].std()
+            jsonOutput[alanineSmpKey][reportingMethod][siteName][OrbiEAKey]['Average Individual Error'] = alanineData['Std ' + reportingMethod + ' Deltas'][siteIndex].mean()
 
 with open("M1AlgorithmResults.json", 'w', encoding='utf-8') as f:
     json.dump(jsonOutput, f, ensure_ascii=False, indent=4)

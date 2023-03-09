@@ -579,7 +579,7 @@ def calcUMN(MNKey, dataFrame, UPerturb, UMNSub = []):
 
 def processM1MCResults(M1Results, UValuesSmp, isotopologuesDict,  molecularDataFrame, GJ = False, disableProgress = False, UMNSub = []):
     '''
-    Processes results of M1 Monte Carlo, converting the M+N Relative abundances into delta space and reordering to match the order of the original input dataframe. 
+    Processes results of M1 Monte Carlo, converting the M+N Relative abundances into delta space and reordering to match the order of the original input dataframe. "Anchored" deltas are given relative to the specified values of the standard in the relevant reference frame for each element (VPDB for carbon, AIR for nitrogen, VSMOW for oxygen and hydrogen, and CDT for sulfur)
     
     Inputs:
         M1Results: A dictionary containing the M1 results from the M1 Monte Carlo routine. 
@@ -594,7 +594,7 @@ def processM1MCResults(M1Results, UValuesSmp, isotopologuesDict,  molecularDataF
         processedResults: A dictionary, containing lists of the results from every Monte Carlo solution for many variables of interest.             
     '''
     MNKey = "M1"
-    processedResults = {'VPDB etc. Deltas':[],'Relative Deltas':[],MNKey + ' M+N Relative Abundance':[],'UM1':[],'Calc U Values':[]}
+    processedResults = {'Anchored Deltas':[],'Relative Deltas':[],MNKey + ' M+N Relative Abundance':[],'UM1':[],'Calc U Values':[]}
     string = "NUMPY"
     if GJ:
         string = "GJ"
@@ -637,7 +637,7 @@ def processM1MCResults(M1Results, UValuesSmp, isotopologuesDict,  molecularDataF
         #This gives deltas relative to standard
         relSmpStdDeltas = [op.compareRelDelta(atomID, delta1, delta2) for atomID, delta1, delta2 in zip(molecularDataFrame['IDS'], appxStd, smpDeltasAbs)]
 
-        processedResults['VPDB etc. Deltas'].append(smpDeltasAbs)
+        processedResults['Anchored Deltas'].append(smpDeltasAbs)
         processedResults['Relative Deltas'].append(relSmpStdDeltas)
         processedResults[MNKey + ' M+N Relative Abundance'].append(M1)
         processedResults['UM1'].append(UM1)
